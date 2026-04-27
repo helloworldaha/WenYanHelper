@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文言文释义助手</title>
+  <style>
+    body {
+      width: 300px;
+      min-height: 200px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #333333;
+      background-color: #ffffff;
+    }
+
+    .popup-header {
+      text-align: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .popup-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+      color: #333333;
+    }
+
+    .popup-subtitle {
+      font-size: 12px;
+      color: #666666;
+      margin-top: 4px;
+    }
+
+    .popup-content {
+      margin-bottom: 16px;
+    }
+
+    .instruction-item {
+      margin-bottom: 12px;
+      padding: 8px 12px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+    }
+
+    .instruction-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #0078d4;
+    }
+
+    .instruction-text {
+      font-size: 13px;
+      color: #666666;
+    }
+
+    .settings-section {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .settings-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #333333;
+    }
+
+    .setting-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .setting-label {
+      font-size: 13px;
+      color: #333333;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.4s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #0078d4;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .proxy-settings {
+      margin-top: 12px;
+      padding: 12px;
+      background-color: #f0f8ff;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .proxy-settings.visible {
+      display: block;
+    }
+
+    .proxy-input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+      margin-top: 8px;
+    }
+
+    .save-button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 12px;
+      background-color: #0078d4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .save-button:hover {
+      background-color: #106ebe;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e0e0e0;
+      font-size: 12px;
+      color: #999999;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-header">
+    <h1 class="popup-title">文言文释义助手</h1>
+    <p class="popup-subtitle">双击选中文字，即可查询文言文释义</p>
+  </div>
+
+  <div class="popup-content">
+    <div class="instruction-item">
+      <div class="instruction-title">使用方法</div>
+      <div class="instruction-text">在网页中双击选中文字（字/词/短语），即可自动触发释义查询</div>
+    </div>
+
+    <div class="instruction-item">
+      <div class="instruction-title">面板操作</div>
+      <div class="instruction-text">
+        - 点击📌按钮固定/取消固定面板<br>
+        - 拖动左侧边缘调整面板宽度<br>
+        - 按ESC键或点击其他区域关闭面板
+      </div>
+    </div>
+
+    <div class="instruction-item">
+      <div class="instruction-title">支持内容</div>
+      <div class="instruction-text">
+        - 单字查询（如"之"）<br>
+        - 多字词查询（如"所以"）<br>
+        - 短语查询（如"以是为"）
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">高级设置</div>
+    
+    <div class="setting-item">
+      <span class="setting-label">使用后端代理</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="useBackendProxy">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="proxy-settings" id="proxySettings">
+      <div class="setting-label">后端代理地址</div>
+      <input type="text" class="proxy-input" id="backendProxyUrl" placeholder="例如: http://localhost:8080/api/query">
+      <button class="save-button" id="saveSettings">保存设置</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    版本 1.0.0 | 数据来源：文言文在线字典
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

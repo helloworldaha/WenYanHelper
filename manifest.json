@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "文言文释义助手",
+  "version": "1.0.0",
+  "description": "文言文释义浏览器插件，双击选中文本即可查询释义",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://wyw.hwxnet.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
