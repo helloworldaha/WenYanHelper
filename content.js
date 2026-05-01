@@ -251,6 +251,13 @@
 
   // 查询释义
   async function queryDefinition(text) {
+    console.log('[文言文助手] 开始查询释义, text:', text);
+    console.log('[文言文助手] 当前配置:', {
+      useBackendProxy: CONFIG.useBackendProxy,
+      backendProxyUrl: CONFIG.backendProxyUrl,
+      apiUrl: CONFIG.apiUrl
+    });
+    
     // 显示加载状态
     showLoading();
     
@@ -258,17 +265,17 @@
       let result;
       
       if (CONFIG.useBackendProxy && CONFIG.backendProxyUrl) {
-        // 使用后端代理
+        console.log('[文言文助手] 使用后端代理模式');
         result = await queryWithBackendProxy(text);
       } else {
-        // 前端直连
+        console.log('[文言文助手] 使用直接请求模式');
         result = await queryWithDirectFetch(text);
       }
       
       // 显示结果
       displayResult(result);
     } catch (error) {
-      console.error('查询失败:', error);
+      console.error('[文言文助手] 查询失败:', error);
       displayError('查询失败，请稍后重试');
     }
   }
@@ -300,15 +307,29 @@
 
   // 通过background script查询（处理跨域）
   async function queryWithBackgroundScript(text) {
+    console.log('[文言文助手] 通过 background script 查询, text:', text);
+    console.log('[文言文助手] 发送给 background 的参数:', {
+      action: 'queryDefinition',
+      text: text,
+      apiUrl: CONFIG.apiUrl,
+      useBackendProxy: CONFIG.useBackendProxy,
+      backendProxyUrl: CONFIG.backendProxyUrl
+    });
+    
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
         { 
           action: 'queryDefinition', 
           text: text,
-          apiUrl: CONFIG.apiUrl
+          apiUrl: CONFIG.apiUrl,
+          useBackendProxy: CONFIG.useBackendProxy,
+          backendProxyUrl: CONFIG.backendProxyUrl
         },
         (response) => {
+          console.log('[文言文助手] 收到 background 的响应:', response);
+          
           if (chrome.runtime.lastError) {
+            console.error('[文言文助手] background 脚本错误:', chrome.runtime.lastError);
             reject(chrome.runtime.lastError);
             return;
           }
@@ -323,21 +344,50 @@
     });
   }
 
-  // 使用后端代理查询（后续实现）
+  // 使用后端代理查询
   async function queryWithBackendProxy(text) {
-    const response = await fetch(CONFIG.backendProxyUrl, {
-      method: 'POST',
+    console.log('[文言文助手] 使用后端代理查询, backendProxyUrl:', CONFIG.backendProxyUrl);
+    
+    // 修复 URL 拼接逻辑：如果用户已经输入了完整的 API 路径，就不再重复拼接
+    let baseUrl = CONFIG.backendProxyUrl.trim();
+    
+    // 移除末尾的斜杠
+    if (baseUrl.endsWith('/')) {
+      baseUrl = baseUrl.slice(0, -1);
+    }
+    
+    let queryUrl;
+    // 检查是否已经包含 /api/query 路径
+    if (baseUrl.includes('/api/query')) {
+      // 如果已经包含，直接使用（添加查询参数）
+      const separator = baseUrl.includes('?') ? '&' : '?';
+      queryUrl = `${baseUrl}${separator}word=${encodeURIComponent(text)}`;
+    } else {
+      // 如果不包含，拼接 /api/query 路径
+      queryUrl = `${baseUrl}/api/query?word=${encodeURIComponent(text)}`;
+    }
+    
+    console.log('[文言文助手] 最终请求 URL:', queryUrl);
+    
+    const response = await fetch(queryUrl, {
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ text: text })
+        'Accept': 'application/json'
+      }
     });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    return await response.json();
+    const result = await response.json();
+    console.log('[文言文助手] 后端代理返回结果:', result);
+    
+    if (!result.success) {
+      throw new Error(result.error || '查询失败');
+    }
+    
+    return result.data;
   }
 
   // 解析HTML结果
@@ -511,18 +561,28 @@
   // 加载用户偏好
   function loadPreferences() {
     try {
-      chrome.storage.local.get(['panelWidth', 'isPanelFixed'], (result) => {
-        if (result.panelWidth) {
+      chrome.storage.local.get(['panelWidth', 'isPanelFixed', 'useBackendProxy', 'backendProxyUrl'], (result) => {
+        if (result.panelWidth !== undefined) {
           state.panelWidth = result.panelWidth;
           panel.style.width = `${state.panelWidth}px`;
         }
         
-        if (result.isPanelFixed) {
+        if (result.isPanelFixed !== undefined) {
           state.isPanelFixed = result.isPanelFixed;
           if (state.isPanelFixed) {
             fixButton.classList.add('active');
             panel.classList.add('fixed');
           }
+        }
+        
+        if (result.useBackendProxy !== undefined) {
+          CONFIG.useBackendProxy = result.useBackendProxy;
+          console.log(`[文言文助手] 加载配置: useBackendProxy = ${result.useBackendProxy}`);
+        }
+        
+        if (result.backendProxyUrl !== undefined) {
+          CONFIG.backendProxyUrl = result.backendProxyUrl;
+          console.log(`[文言文助手] 加载配置: backendProxyUrl = ${result.backendProxyUrl}`);
         }
       });
     } catch (e) {

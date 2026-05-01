@@ -8,7 +8,9 @@
     "storage"
   ],
   "host_permissions": [
-    "https://wyw.hwxnet.com/*"
+    "https://wyw.hwxnet.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
   ],
   "content_scripts": [
     {

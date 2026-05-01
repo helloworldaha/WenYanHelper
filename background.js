@@ -17,184 +17,262 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // 处理释义查询
 async function handleQueryDefinition(request, sendResponse) {
   try {
-    const { text, apiUrl } = request;
+    const { text, apiUrl, useBackendProxy, backendProxyUrl } = request;
     
-    // 第一步：先访问首页，获取可能需要的cookie和会话
-    let homeResponse = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': apiUrl
-      },
-      credentials: 'include',
-      redirect: 'follow'
-    });
-    
-    // 第二步：使用GET请求提交搜索
-    // 注意：实际应该使用 search.do 而不是 search.jsp
-    // URL格式: /search.do?wd=xxx&x=0&y=0
-    const encodedText = encodeURIComponent(text);
-    const searchUrl = `${apiUrl}/search.do?wd=${encodedText}&x=0&y=0`;
-    
-    // 尝试GET请求
-    let response = await fetch(searchUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        'Referer': apiUrl
-      },
-      credentials: 'include',
-      redirect: 'follow'
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP错误: ${response.status}`);
+    if (!text) {
+      throw new Error('缺少必要参数: text');
     }
     
-    let html = await response.text();
-    
-    // 检查响应URL是否已经是详情页面
-    let isDetailPage = response.url.includes('/view/');
-    
-    // 如果不是详情页面，检查是否有JavaScript重定向或搜索结果链接
-    if (!isDetailPage) {
-      // 检查多种重定向方式
-      let redirectUrl = null;
-      
-      // 方式1: window.location.href
-      const locationHrefMatch = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/i);
-      if (locationHrefMatch && locationHrefMatch[1]) {
-        redirectUrl = locationHrefMatch[1];
-      }
-      
-      // 方式2: window.location
-      if (!redirectUrl) {
-        const locationMatch = html.match(/window\.location\s*=\s*["']([^"']+)["']/i);
-        if (locationMatch && locationMatch[1]) {
-          redirectUrl = locationMatch[1];
-        }
-      }
-      
-      // 方式3: location.href
-      if (!redirectUrl) {
-        const hrefMatch = html.match(/location\.href\s*=\s*["']([^"']+)["']/i);
-        if (hrefMatch && hrefMatch[1]) {
-          redirectUrl = hrefMatch[1];
-        }
-      }
-      
-      // 方式4: meta refresh
-      if (!redirectUrl) {
-        const metaRefreshMatch = html.match(/<meta[^>]*http-equiv\s*=\s*["']refresh["'][^>]*content\s*=\s*["']\d+;\s*url\s*=\s*([^"']+)["']/i);
-        if (metaRefreshMatch && metaRefreshMatch[1]) {
-          redirectUrl = metaRefreshMatch[1];
-        }
-      }
-      
-      // 方式5: 直接在HTML中查找详情页面链接
-      if (!redirectUrl) {
-        // 查找所有包含 /view/ 的链接
-        const viewLinkMatches = [];
-        const viewLinkPattern = /href\s*=\s*["']([^"']*\/view\/[^"']+)["']/gi;
-        let match;
-        
-        while ((match = viewLinkPattern.exec(html)) !== null) {
-          viewLinkMatches.push(match[1]);
-        }
-        
-        if (viewLinkMatches.length > 0) {
-          // 优先选择包含原文字的链接，或者第一个链接
-          for (const link of viewLinkMatches) {
-            // 检查链接是否包含查询的文字（URL编码后的）
-            const encodedText = encodeURIComponent(text);
-            if (link.includes(encodedText) || link.includes(text)) {
-              redirectUrl = link;
-              break;
-            }
-          }
-          
-          // 如果没有找到匹配的，使用第一个链接
-          if (!redirectUrl) {
-            redirectUrl = viewLinkMatches[0];
-          }
-        }
-      }
-      
-      // 方式6: 查找包含查询文字的链接
-      if (!redirectUrl) {
-        // 查找所有链接
-        const allLinks = [];
-        const linkPattern = /href\s*=\s*["']([^"']+)["']/gi;
-        let linkMatch;
-        
-        while ((linkMatch = linkPattern.exec(html)) !== null) {
-          const link = linkMatch[1];
-          // 排除导航链接和外部链接
-          if (!link.includes('javascript') && 
-              !link.includes('http://') && 
-              !link.includes('https://') && 
-              !link.includes('#') &&
-              link.length > 5) {
-            allLinks.push(link);
-          }
-        }
-        
-        // 查找包含查询文字的链接
-        for (const link of allLinks) {
-          if (link.includes(text) || link.includes(encodeURIComponent(text))) {
-            redirectUrl = link;
-            break;
-          }
-        }
-      }
-      
-      // 如果找到重定向URL，发起新的请求
-      if (redirectUrl) {
-        // 处理相对URL
-        if (!redirectUrl.startsWith('http')) {
-          if (redirectUrl.startsWith('/')) {
-            redirectUrl = new URL(redirectUrl, apiUrl).href;
-          } else {
-            redirectUrl = new URL(redirectUrl, response.url).href;
-          }
-        }
-        
-        // 发起重定向后的请求
-        response = await fetch(redirectUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Referer': searchUrl
-          },
-          credentials: 'include',
-          redirect: 'follow'
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP错误: ${response.status}`);
-        }
-        
-        html = await response.text();
-      }
+    // 检查是否使用后端代理
+    if (useBackendProxy && backendProxyUrl) {
+      console.log(`[文言文助手] Background: 使用后端代理查询: ${backendProxyUrl}, 查询词: ${text}`);
+      const result = await queryViaBackendProxy(text, backendProxyUrl);
+      console.log(`[文言文助手] Background: 后端代理返回成功`);
+      sendResponse({
+        success: true,
+        data: result
+      });
+      return;
     }
     
-    // 解析HTML并提取有用信息
-    const result = parseHtmlResponse(html, text);
+    console.log(`[文言文助手] Background: 直接请求字典网站: ${apiUrl}, 查询词: ${text}`);
     
+    if (!apiUrl) {
+      throw new Error('缺少必要参数: apiUrl');
+    }
+    
+    const result = await queryDirectly(text, apiUrl);
     sendResponse({
       success: true,
       data: result
     });
   } catch (error) {
     console.error('查询失败:', error);
+    const errorMessage = error instanceof Error ? error.message : '查询失败';
     sendResponse({
       success: false,
-      error: error.message || '查询失败'
+      error: errorMessage
     });
   }
+}
+
+// 通过后端代理查询
+async function queryViaBackendProxy(word, backendProxyUrl) {
+  console.log('[文言文助手] Background: queryViaBackendProxy 被调用, word:', word, ', backendProxyUrl:', backendProxyUrl);
+  
+  // 修复 URL 拼接逻辑：如果用户已经输入了完整的 API 路径，就不再重复拼接
+  let baseUrl = backendProxyUrl.trim();
+  
+  // 移除末尾的斜杠
+  if (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+  
+  let queryUrl;
+  // 检查是否已经包含 /api/query 路径
+  if (baseUrl.includes('/api/query')) {
+    // 如果已经包含，直接使用（添加查询参数）
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    queryUrl = `${baseUrl}${separator}word=${encodeURIComponent(word)}`;
+  } else {
+    // 如果不包含，拼接 /api/query 路径
+    queryUrl = `${baseUrl}/api/query?word=${encodeURIComponent(word)}`;
+  }
+  
+  console.log('[文言文助手] Background: 最终请求 URL:', queryUrl);
+  
+  const response = await fetch(queryUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`后端代理请求失败: HTTP ${response.status}`);
+  }
+  
+  const result = await response.json();
+  console.log('[文言文助手] Background: 后端代理返回结果:', result);
+  
+  if (!result.success) {
+    throw new Error(result.error || '后端代理查询失败');
+  }
+  
+  if (!result.data) {
+    throw new Error('后端代理返回数据为空');
+  }
+  
+  return result.data;
+}
+
+// 直接请求字典网站
+async function queryDirectly(text, apiUrl) {
+  // 第一步：先访问首页，获取可能需要的cookie和会话
+  await fetch(apiUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Referer': apiUrl
+    },
+    credentials: 'include',
+    redirect: 'follow'
+  });
+  
+  // 第二步：使用GET请求提交搜索
+  // 注意：实际应该使用 search.do 而不是 search.jsp
+  // URL格式: /search.do?wd=xxx&x=0&y=0
+  const encodedText = encodeURIComponent(text);
+  const searchUrl = `${apiUrl}/search.do?wd=${encodedText}&x=0&y=0`;
+  
+  // 尝试GET请求
+  let response = await fetch(searchUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Referer': apiUrl
+    },
+    credentials: 'include',
+    redirect: 'follow'
+  });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP错误: ${response.status}`);
+  }
+  
+  let html = await response.text();
+  
+  // 检查响应URL是否已经是详情页面
+  let isDetailPage = response.url.includes('/view/');
+  
+  // 如果不是详情页面，检查是否有JavaScript重定向或搜索结果链接
+  if (!isDetailPage) {
+    // 检查多种重定向方式
+    let redirectUrl = null;
+    
+    // 方式1: window.location.href
+    const locationHrefMatch = html.match(/window\.location\.href\s*=\s*["']([^"']+)["']/i);
+    if (locationHrefMatch && locationHrefMatch[1]) {
+      redirectUrl = locationHrefMatch[1];
+    }
+    
+    // 方式2: window.location
+    if (!redirectUrl) {
+      const locationMatch = html.match(/window\.location\s*=\s*["']([^"']+)["']/i);
+      if (locationMatch && locationMatch[1]) {
+        redirectUrl = locationMatch[1];
+      }
+    }
+    
+    // 方式3: location.href
+    if (!redirectUrl) {
+      const hrefMatch = html.match(/location\.href\s*=\s*["']([^"']+)["']/i);
+      if (hrefMatch && hrefMatch[1]) {
+        redirectUrl = hrefMatch[1];
+      }
+    }
+    
+    // 方式4: meta refresh
+    if (!redirectUrl) {
+      const metaRefreshMatch = html.match(/<meta[^>]*http-equiv\s*=\s*["']refresh["'][^>]*content\s*=\s*["']\d+;\s*url\s*=\s*([^"']+)["']/i);
+      if (metaRefreshMatch && metaRefreshMatch[1]) {
+        redirectUrl = metaRefreshMatch[1];
+      }
+    }
+    
+    // 方式5: 直接在HTML中查找详情页面链接
+    if (!redirectUrl) {
+      // 查找所有包含 /view/ 的链接
+      const viewLinkMatches = [];
+      const viewLinkPattern = /href\s*=\s*["']([^"']*\/view\/[^"']+)["']/gi;
+      let match;
+      
+      while ((match = viewLinkPattern.exec(html)) !== null) {
+        viewLinkMatches.push(match[1]);
+      }
+      
+      if (viewLinkMatches.length > 0) {
+        // 优先选择包含原文字的链接，或者第一个链接
+        for (const link of viewLinkMatches) {
+          // 检查链接是否包含查询的文字（URL编码后的）
+          const encodedText = encodeURIComponent(text);
+          if (link.includes(encodedText) || link.includes(text)) {
+            redirectUrl = link;
+            break;
+          }
+        }
+        
+        // 如果没有找到匹配的，使用第一个链接
+        if (!redirectUrl) {
+          redirectUrl = viewLinkMatches[0];
+        }
+      }
+    }
+    
+    // 方式6: 查找包含查询文字的链接
+    if (!redirectUrl) {
+      // 查找所有链接
+      const allLinks = [];
+      const linkPattern = /href\s*=\s*["']([^"']+)["']/gi;
+      let linkMatch;
+      
+      while ((linkMatch = linkPattern.exec(html)) !== null) {
+        const link = linkMatch[1];
+        // 排除导航链接和外部链接
+        if (!link.includes('javascript') && 
+            !link.includes('http://') && 
+            !link.includes('https://') && 
+            !link.includes('#') &&
+            link.length > 5) {
+          allLinks.push(link);
+        }
+      }
+      
+      // 查找包含查询文字的链接
+      for (const link of allLinks) {
+        if (link.includes(text) || link.includes(encodeURIComponent(text))) {
+          redirectUrl = link;
+          break;
+        }
+      }
+    }
+    
+    // 如果找到重定向URL，发起新的请求
+    if (redirectUrl) {
+      // 处理相对URL
+      if (!redirectUrl.startsWith('http')) {
+        if (redirectUrl.startsWith('/')) {
+          redirectUrl = new URL(redirectUrl, apiUrl).href;
+        } else {
+          redirectUrl = new URL(redirectUrl, response.url).href;
+        }
+      }
+      
+      // 发起重定向后的请求
+      response = await fetch(redirectUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Referer': searchUrl
+        },
+        credentials: 'include',
+        redirect: 'follow'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP错误: ${response.status}`);
+      }
+      
+      html = await response.text();
+    }
+  }
+  
+  // 解析HTML并提取有用信息
+  return parseHtmlResponse(html, text);
 }
 
 // 构建搜索URL

@@ -7,7 +7,7 @@ const manifest = {
   version: '1.0.0',
   description: '文言文释义浏览器插件，双击选中文本即可查询释义',
   permissions: ['activeTab', 'storage'],
-  host_permissions: ['https://wyw.hwxnet.com/*'],
+  host_permissions: ['https://wyw.hwxnet.com/*', 'http://localhost:*/*', 'http://127.0.0.1:*/*'],
   content_scripts: [
     {
       matches: ['<all_urls>'],

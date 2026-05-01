@@ -150,10 +150,15 @@
       margin-top: 8px;
     }
 
-    .save-button {
-      width: 100%;
-      padding: 10px;
+    .button-group {
+      display: flex;
+      gap: 8px;
       margin-top: 12px;
+    }
+
+    .save-button {
+      flex: 1;
+      padding: 10px;
       background-color: #0078d4;
       color: white;
       border: none;
@@ -165,6 +170,22 @@
 
     .save-button:hover {
       background-color: #106ebe;
+    }
+
+    .reset-button {
+      flex: 1;
+      padding: 10px;
+      background-color: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .reset-button:hover {
+      background-color: #5a6268;
     }
 
     .footer {
@@ -220,9 +241,12 @@
     </div>
 
     <div class="proxy-settings" id="proxySettings">
-      <div class="setting-label">后端代理地址</div>
-      <input type="text" class="proxy-input" id="backendProxyUrl" placeholder="例如: http://localhost:8080/api/query">
-      <button class="save-button" id="saveSettings">保存设置</button>
+      <div class="setting-label">后端代理地址（基础URL，不含/api/query）</div>
+      <input type="text" class="proxy-input" id="backendProxyUrl" placeholder="例如: http://localhost:8080">
+      <div class="button-group">
+        <button class="save-button" id="saveSettings">保存设置</button>
+        <button class="reset-button" id="resetSettings">重置</button>
+      </div>
     </div>
   </div>
 

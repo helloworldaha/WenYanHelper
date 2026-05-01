@@ -2,6 +2,8 @@ import { Config, AppState, QueryResult, ChromeMessage, ChromeMessageResponse, Us
 import { parseHtmlResult } from '../utils/htmlParser';
 import { savePreferences, loadPreferencesCallback } from '../utils/storage';
 
+console.log('[文言文助手] content/index.ts 加载中...');
+
 const CONFIG: Config = {
   responseTime: 300,
   defaultPanelWidth: 400,
@@ -116,12 +118,16 @@ function setupEventListeners(): void {
 
   try {
     chrome.runtime.onMessage.addListener((request: ChromeMessage, _sender, sendResponse: (response: ChromeMessageResponse) => void) => {
+      console.log('[文言文助手] 收到消息:', request);
+      
       if (request.action === 'updateSettings') {
         if (request.useBackendProxy !== undefined) {
           CONFIG.useBackendProxy = request.useBackendProxy;
+          console.log('[文言文助手] 更新配置: useBackendProxy =', CONFIG.useBackendProxy);
         }
         if (request.backendProxyUrl !== undefined) {
           CONFIG.backendProxyUrl = request.backendProxyUrl;
+          console.log('[文言文助手] 更新配置: backendProxyUrl =', CONFIG.backendProxyUrl);
         }
         sendResponse({ success: true });
       }
@@ -239,20 +245,29 @@ function toggleFix(): void {
 }
 
 async function queryDefinition(text: string): Promise<void> {
+  console.log('[文言文助手] 开始查询释义, text:', text);
+  console.log('[文言文助手] 当前配置:', {
+    useBackendProxy: CONFIG.useBackendProxy,
+    backendProxyUrl: CONFIG.backendProxyUrl,
+    apiUrl: CONFIG.apiUrl
+  });
+  
   showLoading();
   
   try {
     let result: QueryResult;
     
     if (CONFIG.useBackendProxy && CONFIG.backendProxyUrl) {
+      console.log('[文言文助手] 使用后端代理模式');
       result = await queryWithBackendProxy(text);
     } else {
+      console.log('[文言文助手] 使用直接请求模式');
       result = await queryWithDirectFetch(text);
     }
     
     displayResult(result);
   } catch (error) {
-    console.error('查询失败:', error);
+    console.error('[文言文助手] 查询失败:', error);
     displayError('查询失败，请稍后重试');
   }
 }
@@ -278,15 +293,29 @@ async function queryWithDirectFetch(text: string): Promise<QueryResult> {
 }
 
 async function queryWithBackgroundScript(text: string): Promise<QueryResult> {
+  console.log('[文言文助手] 通过 background script 查询, text:', text);
+  console.log('[文言文助手] 发送给 background 的参数:', {
+    action: 'queryDefinition',
+    text: text,
+    apiUrl: CONFIG.apiUrl,
+    useBackendProxy: CONFIG.useBackendProxy,
+    backendProxyUrl: CONFIG.backendProxyUrl
+  });
+  
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       { 
         action: 'queryDefinition', 
         text: text,
-        apiUrl: CONFIG.apiUrl
+        apiUrl: CONFIG.apiUrl,
+        useBackendProxy: CONFIG.useBackendProxy,
+        backendProxyUrl: CONFIG.backendProxyUrl
       },
       (response: ChromeMessageResponse) => {
+        console.log('[文言文助手] 收到 background 的响应:', response);
+        
         if (chrome.runtime.lastError) {
+          console.error('[文言文助手] background 脚本错误:', chrome.runtime.lastError);
           reject(chrome.runtime.lastError);
           return;
         }
@@ -302,19 +331,48 @@ async function queryWithBackgroundScript(text: string): Promise<QueryResult> {
 }
 
 async function queryWithBackendProxy(text: string): Promise<QueryResult> {
-  const response = await fetch(CONFIG.backendProxyUrl, {
-    method: 'POST',
+  console.log('[文言文助手] 使用后端代理查询, backendProxyUrl:', CONFIG.backendProxyUrl);
+  
+  // 修复 URL 拼接逻辑：如果用户已经输入了完整的 API 路径，就不再重复拼接
+  let baseUrl = CONFIG.backendProxyUrl.trim();
+  
+  // 移除末尾的斜杠
+  if (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+  
+  let queryUrl: string;
+  // 检查是否已经包含 /api/query 路径
+  if (baseUrl.includes('/api/query')) {
+    // 如果已经包含，直接使用（添加查询参数）
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    queryUrl = `${baseUrl}${separator}word=${encodeURIComponent(text)}`;
+  } else {
+    // 如果不包含，拼接 /api/query 路径
+    queryUrl = `${baseUrl}/api/query?word=${encodeURIComponent(text)}`;
+  }
+  
+  console.log('[文言文助手] 最终请求 URL:', queryUrl);
+  
+  const response = await fetch(queryUrl, {
+    method: 'GET',
     headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ text: text })
+      'Accept': 'application/json'
+    }
   });
   
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
   
-  return await response.json();
+  const result = await response.json();
+  console.log('[文言文助手] 后端代理返回结果:', result);
+  
+  if (!result.success) {
+    throw new Error(result.error || '查询失败');
+  }
+  
+  return result.data;
 }
 
 function showLoading(): void {
@@ -414,7 +472,7 @@ function displayError(message: string): void {
 }
 
 function loadPreferences(): void {
-  loadPreferencesCallback(['panelWidth', 'isPanelFixed'], (result: UserPreferences) => {
+  loadPreferencesCallback(['panelWidth', 'isPanelFixed', 'useBackendProxy', 'backendProxyUrl'], (result: UserPreferences) => {
     if (result.panelWidth !== undefined && dom.panel) {
       state.panelWidth = result.panelWidth;
       dom.panel.style.width = `${state.panelWidth}px`;
@@ -426,6 +484,16 @@ function loadPreferences(): void {
         dom.fixButton?.classList.add('active');
         dom.panel?.classList.add('fixed');
       }
+    }
+    
+    if (result.useBackendProxy !== undefined) {
+      CONFIG.useBackendProxy = result.useBackendProxy;
+      console.log(`[文言文助手] 加载配置: useBackendProxy = ${result.useBackendProxy}`);
+    }
+    
+    if (result.backendProxyUrl !== undefined) {
+      CONFIG.backendProxyUrl = result.backendProxyUrl;
+      console.log(`[文言文助手] 加载配置: backendProxyUrl = ${result.backendProxyUrl}`);
     }
   });
 }
